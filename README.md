@@ -1,79 +1,117 @@
-# Evolution API MCP Server
+# 🚀 Evolution API MCP Server
 
-MCP Server para integração com [Evolution API](https://evolution-api.com/), permitindo envio e gerenciamento de mensagens WhatsApp através do Claude.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![MCP](https://img.shields.io/badge/MCP-1.1.2-green.svg)](https://modelcontextprotocol.io/)
 
-## Características
+**MCP Server para Evolution API** - Integração completa do WhatsApp com Claude Desktop via Model Context Protocol (MCP).
 
-- ✅ Envio de mensagens de texto
-- ✅ Envio de mídia (imagens, vídeos, documentos, áudios)
-- ✅ Envio de localização e contatos
-- ✅ Listagem de chats e mensagens
-- ✅ Consulta de mensagens não lidas
-- ✅ Gerenciamento de presença (online/offline)
-- ✅ Validação automática de números de telefone
-- ✅ Tratamento robusto de erros
-- ✅ Logging detalhado
+Este servidor permite que o Claude Desktop interaja com o WhatsApp através da [Evolution API](https://evolution-api.com/), possibilitando envio de mensagens, gerenciamento de conversas, busca de contatos e muito mais.
 
-## Pré-requisitos
+---
 
-- Python 3.10 ou superior
-- [uv](https://github.com/astral-sh/uv) (gerenciador de pacotes Python)
-- Servidor Evolution API configurado e rodando
-- Token de autenticação da Evolution API
-- Uma instância WhatsApp criada e conectada
+## ✨ Features
 
-## Instalação
+### 📤 Envio de Mensagens
+- ✅ Mensagens de texto com preview de links
+- ✅ Imagens com legendas
+- ✅ Vídeos com legendas
+- ✅ Documentos (PDF, DOCX, XLSX, etc)
+- ✅ Áudios
 
-### 1. Clone ou baixe o projeto
+### 💬 Gerenciamento de Conversas
+- ✅ Listar conversas ativas com nomes
+- ✅ Buscar mensagens por texto
+- ✅ Obter mensagens de conversa específica
+- ✅ Enriquecimento automático com nomes de contatos
+
+### 👥 Gerenciamento de Contatos
+- ✅ Listar contatos salvos
+- ✅ Buscar contatos por ID
+- ✅ Obter nome de contato por número
+- ✅ Cache inteligente de nomes (5min TTL)
+
+### ⚡ Performance
+- ✅ Bulk fetch de contatos (1 request vs N+1)
+- ✅ Cache em memória para nomes
+- ✅ Enriquecimento automático de chats
+
+### 🛡️ Qualidade
+- ✅ Validação de números de telefone
+- ✅ Type hints completos
+- ✅ Error handling robusto
+- ✅ Logs estruturados
+
+---
+
+## 📋 Pré-requisitos
+
+1. **Python 3.10+**
+2. **Claude Desktop** instalado
+3. **Instância Evolution API** rodando
+   - Você precisa de:
+     - URL base da API (ex: `https://api.example.com`)
+     - API Token (apikey)
+     - Nome da instância (instance name)
+
+---
+
+## 🔧 Instalação
+
+### 1. Clone o Repositório
 
 ```bash
-cd /caminho/para/evoapi-mcp
+git clone https://github.com/PabloBispo/evoapi-mcp.git
+cd evoapi-mcp
 ```
 
-### 2. Configure as variáveis de ambiente
-
-Copie o arquivo de exemplo e edite com suas credenciais:
+### 2. Instale as Dependências
 
 ```bash
-cp .env.example .env
-```
-
-Edite o arquivo `.env`:
-
-```env
-EVOLUTION_BASE_URL=http://localhost:8080
-EVOLUTION_API_TOKEN=seu-token-aqui
-EVOLUTION_INSTANCE_NAME=minha-instancia
-```
-
-**Importante:**
-- `EVOLUTION_BASE_URL`: URL do seu servidor Evolution API
-- `EVOLUTION_API_TOKEN`: Token de autenticação (API Key)
-- `EVOLUTION_INSTANCE_NAME`: Nome da instância WhatsApp (deve estar criada e conectada)
-
-### 3. Instale as dependências
-
-```bash
+# Usando uv (recomendado)
 uv sync
+
+# OU usando pip
+pip install -e .
 ```
 
-### 4. Teste localmente (opcional)
+### 3. Configure as Variáveis de Ambiente
 
-Antes de instalar no Claude Desktop, você pode testar o servidor:
+Crie um arquivo `.env` na raiz do projeto:
 
 ```bash
-uv run mcp dev src/evoapi_mcp/server.py
+# Evolution API Configuration
+EVOLUTION_BASE_URL=https://your-evolution-api.com
+EVOLUTION_API_TOKEN=your-api-token-here
+EVOLUTION_INSTANCE_NAME=your-instance-name
+
+# Optional: Timeout (default: 30 seconds)
+EVOLUTION_TIMEOUT=30
 ```
 
-Isso abrirá uma interface web onde você pode testar os tools disponíveis.
-
-### 5. Instale no Claude Desktop
-
+**Exemplo real:**
 ```bash
-uv run mcp install src/evoapi_mcp/server.py
+EVOLUTION_BASE_URL=https://pevo.ntropy.com.br
+EVOLUTION_API_TOKEN=9795FDFBB464-495E-A823-28573A5D39EE
+EVOLUTION_INSTANCE_NAME=personal_pablo_bispo_wpp
+EVOLUTION_TIMEOUT=15
 ```
 
-Ou configure manualmente editando `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) ou `%APPDATA%/Claude/claude_desktop_config.json` (Windows):
+### 4. Configure o Claude Desktop
+
+Edite o arquivo de configuração do Claude Desktop:
+
+**macOS:**
+```bash
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+**Windows:**
+```bash
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+Adicione o servidor MCP:
 
 ```json
 {
@@ -81,237 +119,264 @@ Ou configure manualmente editando `~/Library/Application Support/Claude/claude_d
     "evolution-api": {
       "command": "uv",
       "args": [
+        "--directory",
+        "/caminho/completo/para/evoapi-mcp",
         "run",
-        "mcp",
-        "run",
-        "/caminho/completo/para/evoapi-mcp/src/evoapi_mcp/server.py"
+        "evoapi-mcp"
       ],
       "env": {
-        "EVOLUTION_BASE_URL": "http://localhost:8080",
-        "EVOLUTION_API_TOKEN": "seu-token-aqui",
-        "EVOLUTION_INSTANCE_NAME": "minha-instancia"
+        "EVOLUTION_BASE_URL": "https://your-evolution-api.com",
+        "EVOLUTION_API_TOKEN": "your-api-token-here",
+        "EVOLUTION_INSTANCE_NAME": "your-instance-name"
       }
     }
   }
 }
 ```
 
-**Nota:** Substitua `/caminho/completo/para/evoapi-mcp` pelo caminho absoluto do projeto.
+**⚠️ IMPORTANTE:** Use o caminho **absoluto** completo para o diretório do projeto!
 
-### 6. Reinicie o Claude Desktop
+### 5. Reinicie o Claude Desktop
 
-Após a instalação, reinicie o Claude Desktop para carregar o servidor MCP.
-
-## Uso
-
-### Enviando mensagens de texto
-
-```
-Claude, envie uma mensagem de texto para 5511999999999 dizendo "Olá! Tudo bem?"
-```
-
-### Enviando imagens
-
-```
-Claude, envie a imagem https://example.com/imagem.jpg para 5511999999999 com a legenda "Confira isso!"
-```
-
-### Enviando documentos
-
-```
-Claude, envie o documento https://example.com/relatorio.pdf para 5511999999999
-```
-
-### Consultando mensagens não lidas
-
-```
-Claude, quais são as minhas mensagens não lidas no WhatsApp?
-```
-
-### Listando conversas
-
-```
-Claude, liste minhas últimas 20 conversas do WhatsApp
-```
-
-### Obtendo mensagens de uma conversa
-
-```
-Claude, mostre as últimas 30 mensagens da conversa com o número 5511888888888
-```
-
-### Alterando presença
-
-```
-Claude, fique online no WhatsApp
-```
-ou
-```
-Claude, fique offline no WhatsApp
-```
-
-## Tools Disponíveis
-
-### Envio de Mensagens
-
-- **send_text_message** - Envia mensagem de texto
-- **send_image** - Envia imagem
-- **send_document** - Envia documento (PDF, DOCX, XLSX, etc.)
-- **send_video** - Envia vídeo
-- **send_audio** - Envia áudio
-- **send_location** - Envia localização geográfica
-- **send_contact** - Envia contato
-
-### Gerenciamento de Chats
-
-- **list_chats** - Lista conversas ativas
-- **get_chat_messages** - Obtém mensagens de uma conversa
-- **get_chat_by_number** - Obtém chat_id a partir de um número
-- **get_unread_messages** - Lista mensagens não lidas
-- **mark_chat_as_read** - Marca chat como lido
-
-### Status e Presença
-
-- **get_connection_status** - Verifica status da conexão
-- **set_presence** - Define presença (available/unavailable/composing/recording)
-- **get_instance_info** - Obtém informações da instância
-
-## Formato de Números
-
-Todos os números devem estar no formato internacional **sem o sinal de '+'**:
-
-✅ Correto: `5511999999999` (Brasil)
-✅ Correto: `1234567890` (EUA)
-❌ Errado: `+5511999999999`
-❌ Errado: `(11) 99999-9999`
-
-O servidor normaliza automaticamente os números removendo caracteres não numéricos.
-
-## Troubleshooting
-
-### Erro: "Instância desconectada"
-
-A instância WhatsApp perdeu a conexão. Soluções:
-
-1. Verifique se o servidor Evolution API está rodando
-2. Reconecte a instância via interface web da Evolution API
-3. Use `get_connection_status()` para verificar o estado
-
-### Erro: "Falha de autenticação"
-
-Token de API inválido. Verifique:
-
-1. O token no `.env` está correto
-2. O token não expirou
-3. O servidor Evolution API está acessível
-
-### Erro: "Número inválido"
-
-O número de telefone não está no formato correto. Use formato internacional sem '+':
-- Brasil: `5511999999999`
-- EUA: `1234567890`
-
-### Erro: "Timeout"
-
-Operação demorou muito. Possíveis causas:
-
-1. Servidor Evolution API lento ou sobrecarregado
-2. Conexão de rede instável
-3. Arquivo de mídia muito grande
-
-Solução: Aumente o timeout no `.env`:
-
-```env
-EVOLUTION_TIMEOUT=60
-```
-
-### Logs do servidor
-
-Os logs do servidor MCP são enviados para `stderr`. Para visualizar:
-
-- macOS/Linux: Verifique o Console do sistema ou logs do Claude Desktop
-- Windows: Verifique o Visualizador de Eventos
-
-## Desenvolvimento
-
-### Estrutura do projeto
-
-```
-evoapi-mcp/
-├── src/
-│   └── evoapi_mcp/
-│       ├── __init__.py
-│       ├── server.py      # Servidor MCP com todos os tools
-│       ├── config.py       # Configuração e validação
-│       └── client.py       # Wrapper do EvolutionClient
-├── tests/                  # Testes (futuro)
-├── pyproject.toml          # Dependências e configuração
-├── .env.example            # Template de configuração
-└── README.md              # Esta documentação
-```
-
-### Executando testes
-
-```bash
-# Instalar dependências de desenvolvimento
-uv sync --dev
-
-# Rodar testes (quando implementados)
-uv run pytest
-```
-
-### Contribuindo
-
-Contribuições são bem-vindas! Por favor:
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
-3. Commit suas mudanças
-4. Push para a branch (`git push origin feature/nova-funcionalidade`)
-5. Abra um Pull Request
-
-## Notas Importantes
-
-### TODOs
-
-Alguns métodos da Evolution API precisam ser verificados/ajustados conforme a API exata da biblioteca `evolutionapi`:
-
-- `send_location()` - Verificar parâmetros corretos
-- `send_contact()` - Verificar formato de contato
-- `list_chats()` - Verificar estrutura de retorno
-- `get_chat_messages()` - Verificar paginação
-- `get_unread_messages()` - Verificar formato de retorno
-- `set_presence()` - Verificar valores válidos de status
-
-Consulte a [documentação da Evolution API](https://doc.evolution-api.com/) para detalhes específicos.
-
-### Segurança
-
-- **Nunca** commite o arquivo `.env` com suas credenciais
-- **Nunca** exponha seu token de API publicamente
-- Use HTTPS para o `EVOLUTION_BASE_URL` em produção
-- Mantenha seu servidor Evolution API protegido por firewall
-
-## Recursos
-
-- [Evolution API](https://evolution-api.com/) - Site oficial
-- [Documentação Evolution API](https://doc.evolution-api.com/)
-- [Cliente Python Evolution API](https://github.com/EvolutionAPI/evolution-client-python)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
-- [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
-
-## Licença
-
-Este projeto é fornecido "como está", sem garantias. Use por sua conta e risco.
-
-## Suporte
-
-Para problemas ou dúvidas:
-
-1. Verifique a seção [Troubleshooting](#troubleshooting)
-2. Consulte a [documentação da Evolution API](https://doc.evolution-api.com/)
-3. Abra uma issue no repositório do projeto
+Feche completamente (⌘Q no macOS) e reabra o Claude Desktop.
 
 ---
 
-Desenvolvido para uso com Claude Desktop e Evolution API.
+## 🎯 Como Usar
+
+### Exemplos de Comandos no Claude Desktop
+
+#### 📤 Enviar Mensagens
+
+```
+Envie uma mensagem "Olá! Tudo bem?" para o número 5511999999999
+```
+
+```
+Envie a imagem https://example.com/foto.jpg com legenda "Confira!" para 5511987654321
+```
+
+```
+Envie o documento https://example.com/relatorio.pdf para 5511999999999
+```
+
+#### 💬 Consultar Conversas
+
+```
+Liste as 10 conversas mais recentes do meu WhatsApp
+```
+
+```
+Mostre as últimas 50 mensagens do número 5511999999999
+```
+
+```
+Busque mensagens que contenham a palavra "reunião"
+```
+
+#### 👥 Gerenciar Contatos
+
+```
+Liste os primeiros 20 contatos do meu WhatsApp
+```
+
+```
+Qual é o nome do contato 5511987654321?
+```
+
+```
+Mostre informações do contato 5511999999999
+```
+
+#### ℹ️ Status da Conexão
+
+```
+Verifique o status da conexão do WhatsApp
+```
+
+```
+Mostre informações da instância
+```
+
+---
+
+## 🛠️ Tools Disponíveis
+
+### Envio de Mensagens
+
+| Tool | Descrição | Parâmetros |
+|------|-----------|------------|
+| `send_text_message` | Envia mensagem de texto | `number`, `text`, `link_preview` |
+| `send_image` | Envia imagem | `number`, `image_url`, `caption` |
+| `send_video` | Envia vídeo | `number`, `video_url`, `caption` |
+| `send_document` | Envia documento | `number`, `document_url`, `filename`, `caption` |
+| `send_audio` | Envia áudio | `number`, `audio_url` |
+
+### Conversas e Mensagens
+
+| Tool | Descrição | Parâmetros |
+|------|-----------|------------|
+| `list_chats` | Lista conversas ativas | `limit` |
+| `get_chat_messages` | Obtém mensagens de conversa | `number`, `limit` |
+| `find_messages` | Busca mensagens por termo | `query`, `chat_id`, `limit` |
+
+### Contatos
+
+| Tool | Descrição | Parâmetros |
+|------|-----------|------------|
+| `get_contacts` | Lista contatos salvos | `limit` |
+| `find_contact` | Busca contato específico | `contact_id`, `limit` |
+| `get_contact_name_by_number` | Obtém nome por número | `number` |
+
+### Status e Presença
+
+| Tool | Descrição | Parâmetros |
+|------|-----------|------------|
+| `get_connection_status` | Verifica status da conexão | - |
+| `get_instance_info` | Informações da instância | - |
+| `set_presence` | Define status de presença | `status`, `number` |
+
+---
+
+## 🔍 Troubleshooting
+
+### ❌ Erro: "ModuleNotFoundError: No module named 'evoapi_mcp'"
+
+**Solução:**
+- Verifique se o caminho no `claude_desktop_config.json` é **absoluto** (não relativo)
+- Use `pwd` para obter o caminho completo: `cd evoapi-mcp && pwd`
+
+### ❌ Erro: "HTTP 401: Unauthorized"
+
+**Solução:**
+- Verifique se o `EVOLUTION_API_TOKEN` está correto
+- Confirme que o token tem permissões necessárias
+
+### ❌ Erro: "HTTP 404: Endpoint não encontrado"
+
+**Solução:**
+- Verifique se o `EVOLUTION_BASE_URL` está correto
+- Confirme se a Evolution API está rodando
+- Teste manualmente: `curl https://your-api.com/instance/connectionState/instance-name -H "apikey: your-token"`
+
+### ❌ Os nomes dos contatos não aparecem
+
+**Solução:**
+- Reinicie o Claude Desktop para limpar o cache
+- Verifique se os contatos estão salvos no WhatsApp
+- Cache expira automaticamente após 5 minutos
+
+### ❌ Listagem de conversas muito lenta
+
+**Solução:**
+- Já otimizado! Usa bulk fetch de contatos (2 requests ao invés de N+1)
+- Se ainda estiver lento, verifique a conexão com a Evolution API
+
+### 🔍 Como Ver os Logs
+
+Os logs aparecem no **stderr** do processo MCP. Para vê-los:
+
+**macOS/Linux:**
+```bash
+# Logs do Claude Desktop
+tail -f ~/Library/Logs/Claude/mcp*.log
+```
+
+**Ou rode manualmente para debug:**
+```bash
+cd evoapi-mcp
+uv run evoapi-mcp
+# Depois teste chamando tools via stdin
+```
+
+---
+
+## 🗺️ Roadmap
+
+Veja o arquivo [ROADMAP.md](ROADMAP.md) para planos futuros:
+
+### 🔴 FASE 1 - Correções Críticas (Curto Prazo)
+- [ ] Unificar duplicações de código
+- [ ] Adicionar validações robustas
+- [ ] Cache com TTL
+
+### 🟡 FASE 2 - Melhorias de Qualidade (Médio Prazo)
+- [ ] Type safety com Pydantic
+- [ ] Retry logic automático
+- [ ] Sanitização de logs
+
+### 🟢 FASE 3 - Novas Funcionalidades (Longo Prazo)
+- [ ] Gerenciamento de grupos
+- [ ] Deletar/editar mensagens
+- [ ] Upload de arquivos locais
+- [ ] Download de mídias recebidas
+- [ ] Status (stories)
+
+### 🧪 FASE 4 - DevOps
+- [ ] Testes automatizados
+- [ ] CI/CD com GitHub Actions
+- [ ] Documentação completa
+
+---
+
+## 📚 Documentação Adicional
+
+- **[ROADMAP.md](ROADMAP.md)** - Plano de desenvolvimento futuro
+- **[TODO.md](TODO.md)** - Tarefas pendentes organizadas
+- **[KNOWN_ISSUES.md](KNOWN_ISSUES.md)** - Problemas conhecidos e soluções
+- **[FIXES.md](FIXES.md)** - Histórico de correções aplicadas
+
+---
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas! 🎉
+
+### Como Contribuir
+
+1. Fork o projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/amazing-feature`)
+3. Commit suas mudanças (`git commit -m 'Add amazing feature'`)
+4. Push para a branch (`git push origin feature/amazing-feature`)
+5. Abra um Pull Request
+
+### Diretrizes
+
+- Adicione testes para novas funcionalidades
+- Atualize a documentação
+- Siga o estilo de código existente
+- Use commits semânticos
+
+---
+
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+---
+
+## 🙏 Agradecimentos
+
+- [Evolution API](https://evolution-api.com/) - API de WhatsApp incrível
+- [Model Context Protocol](https://modelcontextprotocol.io/) - Protocolo MCP
+- [Anthropic](https://anthropic.com/) - Claude Desktop
+- [FastMCP](https://github.com/jlowin/fastmcp) - Framework Python para MCP
+
+---
+
+## 📞 Suporte
+
+- 🐛 **Issues:** [GitHub Issues](https://github.com/PabloBispo/evoapi-mcp/issues)
+- 💬 **Discussões:** [GitHub Discussions](https://github.com/PabloBispo/evoapi-mcp/discussions)
+
+---
+
+## ⭐ Star History
+
+Se este projeto foi útil, considere dar uma estrela! ⭐
+
+[![Star History Chart](https://api.star-history.com/svg?repos=PabloBispo/evoapi-mcp&type=Date)](https://star-history.com/#PabloBispo/evoapi-mcp&Date)
+
+---
+
+**Feito com ❤️ usando Claude Code**
