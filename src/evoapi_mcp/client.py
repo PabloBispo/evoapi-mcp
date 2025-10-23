@@ -217,19 +217,22 @@ class EvolutionClient:
             dict: Mapeamento de número limpo para nome do contato
         """
         try:
-            # Busca todos os contatos de uma vez
-            result = self.fetch_contacts()
+            # Busca todos os contatos de uma vez (retorna lista direta)
+            contact_list = self.fetch_contacts()
             contacts_map = {}
 
-            contact_list = result.get("data", [])
             for contact in contact_list:
-                # Extrai número do ID
-                contact_id = contact.get("id", "")
-                number = contact_id.replace("@s.whatsapp.net", "")
+                # Extrai número do remoteJid (formato: 5511999999999@s.whatsapp.net)
+                remote_jid = contact.get("remoteJid", "")
+                # Ignora grupos (terminam com @g.us)
+                if remote_jid.endswith("@g.us"):
+                    continue
+
+                number = remote_jid.replace("@s.whatsapp.net", "")
                 clean_number = re.sub(r'\D', '', number)
 
-                # Pega o nome (pushName ou name)
-                name = contact.get("pushName") or contact.get("name")
+                # Pega o pushName
+                name = contact.get("pushName")
                 if clean_number and name:
                     contacts_map[clean_number] = name
 
@@ -300,21 +303,28 @@ class EvolutionClient:
 
         return self.find_messages(chat_id=chat_id, limit=limit)
 
-    def fetch_contacts(self) -> dict[str, Any]:
+    def fetch_contacts(self) -> list[dict[str, Any]]:
         """Busca todos os contatos salvos no WhatsApp.
 
-        Endpoint: POST /chat/contacts/{instanceId}
+        Endpoint: POST /chat/findContacts/{instanceId}
 
         Returns:
-            dict: { "data": [lista de contatos com nomes e números] }
+            list: Lista de contatos com nomes e números
 
         Raises:
             EvolutionAPIError: Se houver erro na requisição
         """
         self._log("Buscando contatos")
-        return self._make_request("POST", "/chat/contacts/{instanceId}")
+        result = self._make_request("POST", "/chat/findContacts/{instanceId}", data={})
 
-    def find_contacts(self, contact_id: str | None = None) -> dict[str, Any]:
+        # A API retorna uma lista diretamente, não um objeto com "data"
+        if not isinstance(result, list):
+            self._log(f"Formato inesperado de resposta: {type(result)}", "WARNING")
+            return []
+
+        return result
+
+    def find_contacts(self, contact_id: str | None = None) -> list[dict[str, Any]]:
         """Busca contatos com filtros opcionais.
 
         Endpoint: POST /chat/findContacts/{instanceId}
@@ -323,7 +333,7 @@ class EvolutionClient:
             contact_id: ID do contato específico para buscar (opcional)
 
         Returns:
-            dict: Lista de contatos encontrados
+            list: Lista de contatos encontrados
 
         Raises:
             EvolutionAPIError: Se houver erro na requisição
@@ -334,11 +344,18 @@ class EvolutionClient:
         if contact_id:
             payload["where"] = {"id": contact_id}
 
-        return self._make_request(
+        result = self._make_request(
             "POST",
             "/chat/findContacts/{instanceId}",
             data=payload
         )
+
+        # A API retorna uma lista diretamente
+        if not isinstance(result, list):
+            self._log(f"Formato inesperado de resposta: {type(result)}", "WARNING")
+            return []
+
+        return result
 
     def get_contact_name(self, number: str, use_cache: bool = True) -> str | None:
         """Busca o nome de um contato por número.
@@ -362,15 +379,14 @@ class EvolutionClient:
 
             contact_id = f"{clean_number}@s.whatsapp.net"
 
-            # Tenta buscar contato específico com filtro
-            result = self.find_contacts(contact_id=contact_id)
+            # Tenta buscar contato específico com filtro (retorna lista direta)
+            contact_list = self.find_contacts(contact_id=contact_id)
 
-            contact_list = result.get("data", [])
             name = None
             if contact_list and len(contact_list) > 0:
                 contact = contact_list[0]
-                # Retorna pushName ou nome do contato
-                name = contact.get("pushName") or contact.get("name")
+                # Retorna pushName
+                name = contact.get("pushName")
 
             # Salva no cache
             if use_cache:

@@ -291,7 +291,7 @@ def find_messages(
 
 
 @mcp.tool()
-def get_contacts(limit: int | None = None) -> dict:
+def get_contacts(limit: int | None = None) -> list:
     """Busca contatos salvos no WhatsApp.
 
     Use esta ferramenta quando o usuário pedir:
@@ -305,10 +305,10 @@ def get_contacts(limit: int | None = None) -> dict:
                Se não especificado, retorna TODOS os contatos (pode ser muitos!)
 
     Returns:
-        dict: { "data": [lista de contatos] } onde cada contato tem:
-              - id: ID do contato (ex: 5511999999999@s.whatsapp.net)
+        list: Lista de contatos onde cada contato tem:
+              - remoteJid: ID do contato (ex: 5511999999999@s.whatsapp.net)
               - pushName: Nome do contato
-              - name: Nome alternativo
+              - isGroup: Se é grupo ou contato individual
 
     Example:
         # Buscar todos os contatos (pode retornar centenas!)
@@ -317,20 +317,20 @@ def get_contacts(limit: int | None = None) -> dict:
         # Buscar apenas os primeiros 10 contatos (RECOMENDADO quando há quantidade)
         contacts = get_contacts(limit=10)
     """
-    result = client.fetch_contacts()
+    contacts = client.fetch_contacts()
 
-    # Aplica limit se fornecido e se result tem 'data'
-    if limit is not None and isinstance(result, dict) and "data" in result:
-        result["data"] = result["data"][:limit]
+    # Aplica limit se fornecido
+    if limit is not None and isinstance(contacts, list):
+        contacts = contacts[:limit]
 
-    return result
+    return contacts
 
 
 @mcp.tool()
 def find_contact(
     contact_id: str | None = None,
     limit: int | None = None
-) -> dict:
+) -> list:
     """Busca contatos com filtros opcionais.
 
     Args:
@@ -338,7 +338,7 @@ def find_contact(
         limit: Número máximo de contatos a retornar (opcional, padrão: todos)
 
     Returns:
-        dict: Lista de contatos encontrados
+        list: Lista de contatos encontrados
 
     Example:
         # Buscar todos os contatos
@@ -350,13 +350,13 @@ def find_contact(
         # Buscar contato específico
         contact = find_contact(contact_id="5511999999999@s.whatsapp.net")
     """
-    result = client.find_contacts(contact_id=contact_id)
+    contacts = client.find_contacts(contact_id=contact_id)
 
-    # Aplica limit se fornecido e se result tem 'data'
-    if limit is not None and isinstance(result, dict) and "data" in result:
-        result["data"] = result["data"][:limit]
+    # Aplica limit se fornecido
+    if limit is not None and isinstance(contacts, list):
+        contacts = contacts[:limit]
 
-    return result
+    return contacts
 
 
 @mcp.tool()
