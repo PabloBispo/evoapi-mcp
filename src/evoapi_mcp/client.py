@@ -5,6 +5,7 @@ import re
 from typing import Any
 from pathlib import Path
 from evolutionapi.client import EvolutionClient as BaseEvolutionClient
+from evolutionapi.models.message import TextMessage
 
 # Adiciona o diretório src ao path para permitir importações
 src_dir = Path(__file__).parent.parent
@@ -46,7 +47,8 @@ class EvolutionClient:
             config: Configuração da Evolution API
         """
         self.config = config
-        self.instance_name = config.instance_name
+        self.instance_id = config.instance_name
+        self.instance_token = config.api_token  # Na v0.1.2, o token é usado tanto como global quanto como instance
 
         # Inicializa o cliente base da Evolution API
         self._client = BaseEvolutionClient(
@@ -54,7 +56,7 @@ class EvolutionClient:
             api_token=config.api_token
         )
 
-        self._log(f"Cliente inicializado para instância '{self.instance_name}'")
+        self._log(f"Cliente inicializado para instância '{self.instance_id}'")
 
     def _log(self, message: str, level: str = "INFO") -> None:
         """Registra uma mensagem no stderr.
@@ -109,7 +111,7 @@ class EvolutionClient:
         # Detecta erros comuns e lança exceções específicas
         if "not connected" in error_msg.lower() or "disconnected" in error_msg.lower():
             raise InstanceDisconnectedError(
-                f"Instância '{self.instance_name}' está desconectada. "
+                f"Instância '{self.instance_id}' está desconectada. "
                 "Verifique a conexão com get_connection_status()"
             )
 
@@ -131,7 +133,6 @@ class EvolutionClient:
         self,
         number: str,
         text: str,
-        mentions: list[str] | None = None,
         link_preview: bool = True
     ) -> dict[str, Any]:
         """Envia uma mensagem de texto.
@@ -139,16 +140,14 @@ class EvolutionClient:
         Args:
             number: Número de telefone no formato internacional
             text: Texto da mensagem
-            mentions: Lista de números a mencionar (opcional)
             link_preview: Se deve mostrar preview de links
 
         Returns:
-            dict: Resposta da API com message_id, status, etc.
+            dict: Resposta da API
 
         Raises:
             InvalidPhoneNumberError: Se o número for inválido
-            InstanceDisconnectedError: Se a instância estiver desconectada
-            EvolutionAPIError: Outros erros da API
+            EvolutionAPIError: Erros da API
         """
         try:
             # Valida e normaliza o número
@@ -156,15 +155,21 @@ class EvolutionClient:
 
             self._log(f"Enviando mensagem de texto para {clean_number}")
 
-            # Chama a API
-            response = self._client.messages.send_text(
-                instance=self.instance_name,
+            # Cria o objeto TextMessage
+            message = TextMessage(
                 number=clean_number,
                 text=text,
-                # TODO: Adicionar suporte a mentions e link_preview quando disponível na lib
+                linkPreview=link_preview
             )
 
-            self._log(f"Mensagem enviada com sucesso: {response.get('message_id', 'N/A')}")
+            # Chama a API
+            response = self._client.messages.send_text(
+                instance_id=self.instance_id,
+                message=message,
+                instance_token=self.instance_token
+            )
+
+            self._log(f"Mensagem enviada com sucesso")
             return response
 
         except (InvalidPhoneNumberError, InstanceDisconnectedError, EvolutionAPIError):
@@ -176,7 +181,7 @@ class EvolutionClient:
         """Obtém o estado da conexão da instância.
 
         Returns:
-            dict: Estado da conexão (state, qrcode se disponível, etc.)
+            dict: Estado da conexão
 
         Raises:
             EvolutionAPIError: Se houver erro ao consultar o estado
@@ -184,8 +189,9 @@ class EvolutionClient:
         try:
             self._log(f"Consultando estado da conexão")
 
-            response = self._client.instance.get_connection_state(
-                instance=self.instance_name
+            response = self._client.instance_operations.get_connection_state(
+                instance_id=self.instance_id,
+                instance_token=self.instance_token
             )
 
             state = response.get('state', 'unknown')
@@ -225,15 +231,20 @@ class EvolutionClient:
 
             self._log(f"Enviando {media_type} para {clean_number}")
 
-            # TODO: Implementar após verificar API exata da evolutionapi
-            # Por enquanto, método placeholder
-            response = self._client.messages.send_media(
-                instance=self.instance_name,
+            # A API evolutionapi usa send_media para todos os tipos
+            from evolutionapi.models.message import MediaMessage
+
+            media_message = MediaMessage(
                 number=clean_number,
-                media_url=media_url,
-                media_type=media_type,
+                media=media_url,
                 caption=caption,
-                filename=filename
+                fileName=filename if filename else None
+            )
+
+            response = self._client.messages.send_media(
+                instance_id=self.instance_id,
+                message=media_message,
+                instance_token=self.instance_token
             )
 
             self._log(f"Mídia enviada com sucesso")
@@ -244,11 +255,80 @@ class EvolutionClient:
         except Exception as e:
             self._handle_error(e, f"send_media ({media_type})")
 
+    def get_messages(
+        self,
+        number: str,
+        limit: int = 50
+    ) -> dict[str, Any]:
+        """Obtém mensagens de uma conversa.
+
+        Args:
+            number: Número de telefone
+            limit: Número máximo de mensagens
+
+        Returns:
+            dict: Mensagens da conversa
+
+        Raises:
+            EvolutionAPIError: Se houver erro
+        """
+        try:
+            clean_number = self.validate_phone_number(number)
+            # Formato de chat_id do WhatsApp
+            remote_jid = f"{clean_number}@s.whatsapp.net"
+
+            self._log(f"Obtendo mensagens de {clean_number}")
+
+            response = self._client.chat.get_messages(
+                instance_id=self.instance_id,
+                instance_token=self.instance_token,
+                remote_jid=remote_jid,
+                limit=limit
+            )
+
+            return response
+
+        except Exception as e:
+            self._handle_error(e, "get_messages")
+
+    def set_presence(
+        self,
+        status: str,
+        number: str | None = None
+    ) -> dict[str, Any]:
+        """Define presença.
+
+        Args:
+            status: Status (available, unavailable, composing, recording)
+            number: Número para enviar presença (opcional)
+
+        Returns:
+            dict: Resposta
+
+        Raises:
+            EvolutionAPIError: Se houver erro
+        """
+        try:
+            self._log(f"Definindo presença como '{status}'")
+
+            response = self._client.chat.send_presence(
+                instance_id=self.instance_id,
+                instance_token=self.instance_token,
+                number=number if number else "",
+                presence=status,
+                delay=0
+            )
+
+            return response
+
+        except Exception as e:
+            self._handle_error(e, "set_presence")
+
     def get_instance_info(self) -> dict[str, Any]:
         """Obtém informações detalhadas da instância.
 
         Returns:
-            dict: Informações da instância (nome, número conectado, status, etc.)
+            dict: Informações da instância
 
         Raises:
             EvolutionAPIError: Se houver erro ao consultar
@@ -256,12 +336,14 @@ class EvolutionClient:
         try:
             self._log("Consultando informações da instância")
 
-            # TODO: Verificar método correto na lib
-            response = self._client.instance.get_instance(
-                instance=self.instance_name
-            )
+            # Usa get_connection_state que retorna info da instância
+            response = self.get_connection_state()
 
-            return response
+            return {
+                "instance_name": self.instance_id,
+                "status": response.get("state", "unknown"),
+                "info": response
+            }
 
         except Exception as e:
             self._handle_error(e, "get_instance_info")
