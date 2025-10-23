@@ -190,7 +190,7 @@ def get_chat_messages(
     number: str,
     limit: int = 50
 ) -> dict:
-    """Obtém mensagens de uma conversa específica.
+    """Obtém mensagens de uma conversa específica por número.
 
     Args:
         number: Número no formato internacional sem '+' (ex: 5511999999999)
@@ -205,7 +205,47 @@ def get_chat_messages(
             limit=30
         )
     """
-    return client.get_messages(number=number, limit=limit)
+    return client.get_messages_by_number(number=number, limit=limit)
+
+
+@mcp.tool()
+def list_chats() -> dict:
+    """Lista todas as conversas ativas do WhatsApp.
+
+    Returns:
+        dict: { "data": [lista de chats] } com informações das conversas
+
+    Example:
+        chats = list_chats()
+        print(f"Total de conversas: {len(chats['data'])}")
+    """
+    return client.find_chats()
+
+
+@mcp.tool()
+def find_messages(
+    query: str | None = None,
+    chat_id: str | None = None,
+    limit: int = 50
+) -> dict:
+    """Busca mensagens com filtros avançados.
+
+    Args:
+        query: Termo de busca nas mensagens (opcional)
+        chat_id: ID do chat específico no formato WhatsApp (ex: 5511999999999@s.whatsapp.net)
+        limit: Número máximo de mensagens a retornar (padrão: 50)
+
+    Returns:
+        dict: Lista de mensagens encontradas
+
+    Example:
+        # Buscar por termo
+        messages = find_messages(query="pedido")
+
+        # Buscar em chat específico
+        messages = find_messages(chat_id="5511999999999@s.whatsapp.net", limit=20)
+    """
+    return client.find_messages(query=query, chat_id=chat_id, limit=limit)
 
 
 # ============================================================================

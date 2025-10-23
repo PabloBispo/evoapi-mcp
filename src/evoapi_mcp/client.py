@@ -1,11 +1,10 @@
-"""Wrapper do cliente Evolution API."""
+"""Cliente HTTP direto para Evolution API."""
 
 import sys
 import re
+import requests
 from typing import Any
 from pathlib import Path
-from evolutionapi.client import EvolutionClient as BaseEvolutionClient
-from evolutionapi.models.message import TextMessage
 
 # Adiciona o diretório src ao path para permitir importações
 src_dir = Path(__file__).parent.parent
@@ -31,13 +30,10 @@ class InvalidPhoneNumberError(EvolutionAPIError):
 
 
 class EvolutionClient:
-    """Wrapper do cliente Evolution API com funcionalidades extras.
+    """Cliente HTTP direto para Evolution API.
 
-    Este wrapper adiciona:
-    - Validação de números de telefone
-    - Tratamento de erros padronizado
-    - Logging adequado (stderr)
-    - Gerenciamento automático da instância
+    Faz chamadas HTTP diretas à API REST seguindo a documentação oficial.
+    Usa o header 'apikey' para autenticação e {instanceId} nos endpoints.
     """
 
     def __init__(self, config: EvolutionConfig):
@@ -47,14 +43,16 @@ class EvolutionClient:
             config: Configuração da Evolution API
         """
         self.config = config
+        self.base_url = config.base_url.rstrip('/')
+        self.api_key = config.api_token
         self.instance_id = config.instance_name
-        self.instance_token = config.api_token  # Na v0.1.2, o token é usado tanto como global quanto como instance
+        self.timeout = config.timeout
 
-        # Inicializa o cliente base da Evolution API
-        self._client = BaseEvolutionClient(
-            base_url=config.base_url,
-            api_token=config.api_token
-        )
+        # Headers padrão para todas as requisições
+        self.headers = {
+            'apikey': self.api_key,
+            'Content-Type': 'application/json'
+        }
 
         self._log(f"Cliente inicializado para instância '{self.instance_id}'")
 
@@ -95,39 +93,158 @@ class EvolutionClient:
 
         return clean_number
 
-    def _handle_error(self, error: Exception, context: str) -> None:
-        """Trata erros de forma padronizada.
+    def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        data: dict | None = None,
+        params: dict | None = None
+    ) -> dict[str, Any]:
+        """Faz uma requisição HTTP à API.
 
         Args:
-            error: Exceção capturada
-            context: Contexto da operação (para mensagem de erro)
+            method: Método HTTP (GET, POST, PUT, DELETE)
+            endpoint: Endpoint da API (ex: /chat/findChats/{instanceId})
+            data: Dados do corpo da requisição (para POST/PUT)
+            params: Parâmetros de query string (para GET)
+
+        Returns:
+            dict: Resposta JSON da API
 
         Raises:
-            EvolutionAPIError: Erro tratado com mensagem descritiva
+            EvolutionAPIError: Se houver erro na requisição
         """
-        error_msg = str(error)
-        self._log(f"Erro em {context}: {error_msg}", "ERROR")
+        # Substitui {instanceId} no endpoint
+        endpoint = endpoint.replace('{instanceId}', self.instance_id)
+        url = f"{self.base_url}{endpoint}"
 
-        # Detecta erros comuns e lança exceções específicas
-        if "not connected" in error_msg.lower() or "disconnected" in error_msg.lower():
-            raise InstanceDisconnectedError(
-                f"Instância '{self.instance_id}' está desconectada. "
-                "Verifique a conexão com get_connection_status()"
+        try:
+            self._log(f"{method} {endpoint}")
+
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=self.headers,
+                json=data,
+                params=params,
+                timeout=self.timeout
             )
 
-        if "unauthorized" in error_msg.lower() or "invalid token" in error_msg.lower():
-            raise EvolutionAPIError(
-                f"Falha de autenticação. Verifique o EVOLUTION_API_TOKEN"
-            )
+            # Verifica se a resposta foi bem-sucedida
+            response.raise_for_status()
 
-        if "timeout" in error_msg.lower():
+            # Tenta retornar JSON, se houver
+            try:
+                return response.json()
+            except ValueError:
+                return {"status": "success", "data": response.text}
+
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+            self._log(error_msg, "ERROR")
+
+            # Detecta erros específicos
+            if e.response.status_code == 401:
+                raise EvolutionAPIError("Falha de autenticação. Verifique o EVOLUTION_API_TOKEN")
+            elif e.response.status_code == 404:
+                raise EvolutionAPIError(f"Endpoint não encontrado: {endpoint}")
+            else:
+                raise EvolutionAPIError(error_msg)
+
+        except requests.exceptions.Timeout:
             raise EvolutionAPIError(
-                f"Timeout ao executar {context}. "
+                f"Timeout ao executar {method} {endpoint}. "
                 f"Tente novamente ou aumente EVOLUTION_TIMEOUT"
             )
 
-        # Erro genérico
-        raise EvolutionAPIError(f"Erro em {context}: {error_msg}")
+        except requests.exceptions.ConnectionError as e:
+            raise EvolutionAPIError(f"Erro de conexão: {str(e)}")
+
+        except Exception as e:
+            self._log(f"Erro inesperado: {str(e)}", "ERROR")
+            raise EvolutionAPIError(f"Erro em {method} {endpoint}: {str(e)}")
+
+    # =========================================================================
+    # CHAT OPERATIONS
+    # =========================================================================
+
+    def find_chats(self) -> dict[str, Any]:
+        """Busca todas as conversas ativas.
+
+        Endpoint: GET /chat/findChats/{instanceId}
+
+        Returns:
+            dict: { "data": [{ chat object }] }
+
+        Raises:
+            EvolutionAPIError: Se houver erro na requisição
+        """
+        self._log("Buscando conversas")
+        return self._make_request("GET", "/chat/findChats/{instanceId}")
+
+    def find_messages(
+        self,
+        query: str | None = None,
+        chat_id: str | None = None,
+        limit: int = 50
+    ) -> dict[str, Any]:
+        """Busca mensagens de uma conversa.
+
+        Endpoint: POST /chat/findMessages/{instanceId}
+
+        Args:
+            query: Termo de busca nas mensagens (opcional)
+            chat_id: ID do chat específico (ex: 5511999999999@s.whatsapp.net)
+            limit: Número máximo de mensagens a retornar
+
+        Returns:
+            dict: Lista de mensagens
+
+        Raises:
+            EvolutionAPIError: Se houver erro na requisição
+        """
+        self._log(f"Buscando mensagens (limit={limit})")
+
+        payload = {}
+        if query:
+            payload["query"] = query
+        if chat_id:
+            payload["chatId"] = chat_id
+        if limit:
+            payload["limit"] = limit
+
+        return self._make_request(
+            "POST",
+            "/chat/findMessages/{instanceId}",
+            data=payload
+        )
+
+    def get_messages_by_number(
+        self,
+        number: str,
+        limit: int = 50
+    ) -> dict[str, Any]:
+        """Obtém mensagens de uma conversa por número.
+
+        Args:
+            number: Número de telefone
+            limit: Número máximo de mensagens
+
+        Returns:
+            dict: Mensagens da conversa
+
+        Raises:
+            InvalidPhoneNumberError: Se o número for inválido
+            EvolutionAPIError: Se houver erro
+        """
+        clean_number = self.validate_phone_number(number)
+        chat_id = f"{clean_number}@s.whatsapp.net"
+
+        return self.find_messages(chat_id=chat_id, limit=limit)
+
+    # =========================================================================
+    # MESSAGE SENDING
+    # =========================================================================
 
     def send_text(
         self,
@@ -136,6 +253,8 @@ class EvolutionClient:
         link_preview: bool = True
     ) -> dict[str, Any]:
         """Envia uma mensagem de texto.
+
+        Endpoint: POST /message/sendText/{instanceId}
 
         Args:
             number: Número de telefone no formato internacional
@@ -149,58 +268,20 @@ class EvolutionClient:
             InvalidPhoneNumberError: Se o número for inválido
             EvolutionAPIError: Erros da API
         """
-        try:
-            # Valida e normaliza o número
-            clean_number = self.validate_phone_number(number)
+        clean_number = self.validate_phone_number(number)
+        self._log(f"Enviando mensagem de texto para {clean_number}")
 
-            self._log(f"Enviando mensagem de texto para {clean_number}")
+        payload = {
+            "number": clean_number,
+            "text": text,
+            "linkPreview": link_preview
+        }
 
-            # Cria o objeto TextMessage
-            message = TextMessage(
-                number=clean_number,
-                text=text,
-                linkPreview=link_preview
-            )
-
-            # Chama a API
-            response = self._client.messages.send_text(
-                instance_id=self.instance_id,
-                message=message,
-                instance_token=self.instance_token
-            )
-
-            self._log(f"Mensagem enviada com sucesso")
-            return response
-
-        except (InvalidPhoneNumberError, InstanceDisconnectedError, EvolutionAPIError):
-            raise
-        except Exception as e:
-            self._handle_error(e, "send_text")
-
-    def get_connection_state(self) -> dict[str, Any]:
-        """Obtém o estado da conexão da instância.
-
-        Returns:
-            dict: Estado da conexão
-
-        Raises:
-            EvolutionAPIError: Se houver erro ao consultar o estado
-        """
-        try:
-            self._log(f"Consultando estado da conexão")
-
-            response = self._client.instance_operations.get_connection_state(
-                instance_id=self.instance_id,
-                instance_token=self.instance_token
-            )
-
-            state = response.get('state', 'unknown')
-            self._log(f"Estado da conexão: {state}")
-
-            return response
-
-        except Exception as e:
-            self._handle_error(e, "get_connection_state")
+        return self._make_request(
+            "POST",
+            "/message/sendText/{instanceId}",
+            data=payload
+        )
 
     def send_media(
         self,
@@ -211,6 +292,8 @@ class EvolutionClient:
         filename: str | None = None
     ) -> dict[str, Any]:
         """Envia mídia (imagem, vídeo, documento, áudio).
+
+        Endpoint: POST /message/sendMedia/{instanceId}
 
         Args:
             number: Número de telefone no formato internacional
@@ -226,70 +309,52 @@ class EvolutionClient:
             InvalidPhoneNumberError: Se o número for inválido
             EvolutionAPIError: Erros da API
         """
-        try:
-            clean_number = self.validate_phone_number(number)
+        clean_number = self.validate_phone_number(number)
+        self._log(f"Enviando {media_type} para {clean_number}")
 
-            self._log(f"Enviando {media_type} para {clean_number}")
+        payload = {
+            "number": clean_number,
+            "mediatype": media_type,
+            "media": media_url
+        }
 
-            # A API evolutionapi usa send_media para todos os tipos
-            from evolutionapi.models.message import MediaMessage
+        if caption:
+            payload["caption"] = caption
+        if filename:
+            payload["fileName"] = filename
 
-            media_message = MediaMessage(
-                number=clean_number,
-                media=media_url,
-                caption=caption,
-                fileName=filename if filename else None
-            )
+        return self._make_request(
+            "POST",
+            "/message/sendMedia/{instanceId}",
+            data=payload
+        )
 
-            response = self._client.messages.send_media(
-                instance_id=self.instance_id,
-                message=media_message,
-                instance_token=self.instance_token
-            )
+    # =========================================================================
+    # INSTANCE OPERATIONS
+    # =========================================================================
 
-            self._log(f"Mídia enviada com sucesso")
-            return response
+    def get_connection_state(self) -> dict[str, Any]:
+        """Obtém o estado da conexão da instância.
 
-        except (InvalidPhoneNumberError, EvolutionAPIError):
-            raise
-        except Exception as e:
-            self._handle_error(e, f"send_media ({media_type})")
-
-    def get_messages(
-        self,
-        number: str,
-        limit: int = 50
-    ) -> dict[str, Any]:
-        """Obtém mensagens de uma conversa.
-
-        Args:
-            number: Número de telefone
-            limit: Número máximo de mensagens
+        Endpoint: GET /instance/connectionState/{instanceId}
 
         Returns:
-            dict: Mensagens da conversa
+            dict: Estado da conexão
 
         Raises:
-            EvolutionAPIError: Se houver erro
+            EvolutionAPIError: Se houver erro ao consultar o estado
         """
-        try:
-            clean_number = self.validate_phone_number(number)
-            # Formato de chat_id do WhatsApp
-            remote_jid = f"{clean_number}@s.whatsapp.net"
+        self._log("Consultando estado da conexão")
 
-            self._log(f"Obtendo mensagens de {clean_number}")
+        response = self._make_request(
+            "GET",
+            "/instance/connectionState/{instanceId}"
+        )
 
-            response = self._client.chat.get_messages(
-                instance_id=self.instance_id,
-                instance_token=self.instance_token,
-                remote_jid=remote_jid,
-                limit=limit
-            )
+        state = response.get('state', 'unknown')
+        self._log(f"Estado da conexão: {state}")
 
-            return response
-
-        except Exception as e:
-            self._handle_error(e, "get_messages")
+        return response
 
     def set_presence(
         self,
@@ -297,6 +362,8 @@ class EvolutionClient:
         number: str | None = None
     ) -> dict[str, Any]:
         """Define presença.
+
+        Endpoint: POST /chat/presenceUpdate/{instanceId}
 
         Args:
             status: Status (available, unavailable, composing, recording)
@@ -308,21 +375,21 @@ class EvolutionClient:
         Raises:
             EvolutionAPIError: Se houver erro
         """
-        try:
-            self._log(f"Definindo presença como '{status}'")
+        self._log(f"Definindo presença como '{status}'")
 
-            response = self._client.chat.send_presence(
-                instance_id=self.instance_id,
-                instance_token=self.instance_token,
-                number=number if number else "",
-                presence=status,
-                delay=0
-            )
+        payload = {
+            "presence": status
+        }
 
-            return response
+        if number:
+            clean_number = self.validate_phone_number(number)
+            payload["number"] = clean_number
 
-        except Exception as e:
-            self._handle_error(e, "set_presence")
+        return self._make_request(
+            "POST",
+            "/chat/presenceUpdate/{instanceId}",
+            data=payload
+        )
 
     def get_instance_info(self) -> dict[str, Any]:
         """Obtém informações detalhadas da instância.
@@ -333,17 +400,13 @@ class EvolutionClient:
         Raises:
             EvolutionAPIError: Se houver erro ao consultar
         """
-        try:
-            self._log("Consultando informações da instância")
+        self._log("Consultando informações da instância")
 
-            # Usa get_connection_state que retorna info da instância
-            response = self.get_connection_state()
+        # Usa get_connection_state que retorna info da instância
+        response = self.get_connection_state()
 
-            return {
-                "instance_name": self.instance_id,
-                "status": response.get("state", "unknown"),
-                "info": response
-            }
-
-        except Exception as e:
-            self._handle_error(e, "get_instance_info")
+        return {
+            "instance_name": self.instance_id,
+            "status": response.get("state", "unknown"),
+            "info": response
+        }
