@@ -242,6 +242,77 @@ class EvolutionClient:
 
         return self.find_messages(chat_id=chat_id, limit=limit)
 
+    def fetch_contacts(self) -> dict[str, Any]:
+        """Busca todos os contatos salvos no WhatsApp.
+
+        Endpoint: POST /chat/contacts/{instanceId}
+
+        Returns:
+            dict: { "data": [lista de contatos com nomes e números] }
+
+        Raises:
+            EvolutionAPIError: Se houver erro na requisição
+        """
+        self._log("Buscando contatos")
+        return self._make_request("POST", "/chat/contacts/{instanceId}")
+
+    def find_contacts(self, contact_id: str | None = None) -> dict[str, Any]:
+        """Busca contatos com filtros opcionais.
+
+        Endpoint: POST /chat/findContacts/{instanceId}
+
+        Args:
+            contact_id: ID do contato específico para buscar (opcional)
+
+        Returns:
+            dict: Lista de contatos encontrados
+
+        Raises:
+            EvolutionAPIError: Se houver erro na requisição
+        """
+        self._log(f"Buscando contatos{' (filtrado)' if contact_id else ''}")
+
+        payload = {}
+        if contact_id:
+            payload["where"] = {"id": contact_id}
+
+        return self._make_request(
+            "POST",
+            "/chat/findContacts/{instanceId}",
+            data=payload
+        )
+
+    def get_contact_name(self, number: str) -> str | None:
+        """Busca o nome de um contato por número.
+
+        Args:
+            number: Número de telefone
+
+        Returns:
+            str | None: Nome do contato ou None se não encontrado
+
+        Raises:
+            EvolutionAPIError: Se houver erro
+        """
+        try:
+            clean_number = self.validate_phone_number(number)
+            contact_id = f"{clean_number}@s.whatsapp.net"
+
+            # Tenta buscar contato específico com filtro
+            result = self.find_contacts(contact_id=contact_id)
+
+            contact_list = result.get("data", [])
+            if contact_list and len(contact_list) > 0:
+                contact = contact_list[0]
+                # Retorna pushName ou nome do contato
+                return contact.get("pushName") or contact.get("name")
+
+            return None
+
+        except Exception as e:
+            self._log(f"Erro ao buscar nome do contato: {e}", "WARNING")
+            return None
+
     # =========================================================================
     # MESSAGE SENDING
     # =========================================================================

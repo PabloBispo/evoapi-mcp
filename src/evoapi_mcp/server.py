@@ -248,6 +248,65 @@ def find_messages(
     return client.find_messages(query=query, chat_id=chat_id, limit=limit)
 
 
+@mcp.tool()
+def get_contacts() -> dict:
+    """Busca todos os contatos salvos no WhatsApp.
+
+    Returns:
+        dict: { "data": [lista de contatos com nomes e números] }
+
+    Example:
+        contacts = get_contacts()
+        for contact in contacts['data']:
+            print(f"{contact['pushName']}: {contact['id']}")
+    """
+    return client.fetch_contacts()
+
+
+@mcp.tool()
+def find_contact(contact_id: str | None = None) -> dict:
+    """Busca contatos com filtros opcionais.
+
+    Args:
+        contact_id: ID do contato no formato WhatsApp (ex: 5511999999999@s.whatsapp.net)
+
+    Returns:
+        dict: Lista de contatos encontrados
+
+    Example:
+        # Buscar todos
+        all_contacts = find_contact()
+
+        # Buscar contato específico
+        contact = find_contact(contact_id="5511999999999@s.whatsapp.net")
+    """
+    return client.find_contacts(contact_id=contact_id)
+
+
+@mcp.tool()
+def get_contact_name_by_number(number: str) -> dict:
+    """Obtém o nome de um contato pelo número de telefone.
+
+    Args:
+        number: Número no formato internacional sem '+' (ex: 5511999999999)
+
+    Returns:
+        dict: {"number": "5511999999999", "name": "Nome do Contato" ou None}
+
+    Example:
+        info = get_contact_name_by_number("5511999999999")
+        if info['name']:
+            print(f"Contato: {info['name']}")
+        else:
+            print(f"Número não salvo: {info['number']}")
+    """
+    name = client.get_contact_name(number)
+    return {
+        "number": number,
+        "name": name
+    }
+
+
 # ============================================================================
 # TOOLS - Status e Presença
 # ============================================================================
