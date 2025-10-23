@@ -1,9 +1,16 @@
 """MCP Server para Evolution API."""
 
 import sys
+from pathlib import Path
+
+# Adiciona o diretório src ao path para permitir importações
+src_dir = Path(__file__).parent.parent
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from mcp.server.fastmcp import FastMCP
-from .config import load_config
-from .client import EvolutionClient
+from evoapi_mcp.config import load_config
+from evoapi_mcp.client import EvolutionClient
 
 # Inicializa o MCP server
 mcp = FastMCP("Evolution API")

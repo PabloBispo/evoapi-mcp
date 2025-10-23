@@ -3,8 +3,15 @@
 import sys
 import re
 from typing import Any
+from pathlib import Path
 from evolutionapi.client import EvolutionClient as BaseEvolutionClient
-from .config import EvolutionConfig
+
+# Adiciona o diretório src ao path para permitir importações
+src_dir = Path(__file__).parent.parent
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+from evoapi_mcp.config import EvolutionConfig
 
 
 class EvolutionAPIError(Exception):
