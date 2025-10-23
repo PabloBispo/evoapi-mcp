@@ -54,6 +54,9 @@ class EvolutionClient:
             'Content-Type': 'application/json'
         }
 
+        # Cache de nomes de contatos (número -> nome)
+        self._contact_names_cache: dict[str, str | None] = {}
+
         self._log(f"Cliente inicializado para instância '{self.instance_id}'")
 
     def _log(self, message: str, level: str = "INFO") -> None:
@@ -168,10 +171,13 @@ class EvolutionClient:
     # CHAT OPERATIONS
     # =========================================================================
 
-    def find_chats(self) -> dict[str, Any]:
+    def find_chats(self, enrich_with_names: bool = True) -> dict[str, Any]:
         """Busca todas as conversas ativas.
 
         Endpoint: POST /chat/findChats/{instanceId}
+
+        Args:
+            enrich_with_names: Se True, enriquece conversas com nomes dos contatos quando pushName for null
 
         Returns:
             dict: Lista de conversas com informações detalhadas
@@ -180,7 +186,24 @@ class EvolutionClient:
             EvolutionAPIError: Se houver erro na requisição
         """
         self._log("Buscando conversas")
-        return self._make_request("POST", "/chat/findChats/{instanceId}", data={})
+        chats = self._make_request("POST", "/chat/findChats/{instanceId}", data={})
+
+        # Enriquece com nomes de contatos se solicitado
+        if enrich_with_names and isinstance(chats, list):
+            self._log("Enriquecendo conversas com nomes de contatos")
+            for chat in chats:
+                if chat.get("pushName") is None and chat.get("remoteJid"):
+                    # Extrai o número do remoteJid
+                    remote_jid = chat["remoteJid"]
+                    # Ignora grupos (terminam com @g.us)
+                    if not remote_jid.endswith("@g.us"):
+                        number = remote_jid.replace("@s.whatsapp.net", "")
+                        name = self.get_contact_name(number)
+                        if name:
+                            chat["pushName"] = name
+                            chat["_enriched"] = True  # Flag para indicar que foi enriquecido
+
+        return chats
 
     def find_messages(
         self,
@@ -282,11 +305,12 @@ class EvolutionClient:
             data=payload
         )
 
-    def get_contact_name(self, number: str) -> str | None:
+    def get_contact_name(self, number: str, use_cache: bool = True) -> str | None:
         """Busca o nome de um contato por número.
 
         Args:
             number: Número de telefone
+            use_cache: Se deve usar cache de nomes (padrão: True)
 
         Returns:
             str | None: Nome do contato ou None se não encontrado
@@ -296,18 +320,28 @@ class EvolutionClient:
         """
         try:
             clean_number = self.validate_phone_number(number)
+
+            # Verifica cache primeiro
+            if use_cache and clean_number in self._contact_names_cache:
+                return self._contact_names_cache[clean_number]
+
             contact_id = f"{clean_number}@s.whatsapp.net"
 
             # Tenta buscar contato específico com filtro
             result = self.find_contacts(contact_id=contact_id)
 
             contact_list = result.get("data", [])
+            name = None
             if contact_list and len(contact_list) > 0:
                 contact = contact_list[0]
                 # Retorna pushName ou nome do contato
-                return contact.get("pushName") or contact.get("name")
+                name = contact.get("pushName") or contact.get("name")
 
-            return None
+            # Salva no cache
+            if use_cache:
+                self._contact_names_cache[clean_number] = name
+
+            return name
 
         except Exception as e:
             self._log(f"Erro ao buscar nome do contato: {e}", "WARNING")
