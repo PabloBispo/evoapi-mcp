@@ -291,15 +291,24 @@ def find_messages(
 
 
 @mcp.tool()
-def get_contacts(limit: int | None = None) -> list:
-    """Busca contatos salvos no WhatsApp.
+def get_contacts(
+    contact_id: str | None = None,
+    limit: int | None = None
+) -> list:
+    """Busca contatos salvos no WhatsApp com filtros opcionais.
 
     Use esta ferramenta quando o usuário pedir:
     - "liste meus contatos"
     - "mostre 10 contatos"
     - "quais são meus contatos salvos"
+    - "busque o contato 5511999999999"
+    - "mostre informações do contato X"
 
     Args:
+        contact_id: ID específico do contato (ex: 5511999999999@s.whatsapp.net).
+                   Use quando buscar um contato específico.
+                   Se None, retorna todos os contatos.
+
         limit: Número máximo de contatos a retornar. SEMPRE use este parâmetro
                quando o usuário especificar uma quantidade (ex: "10 contatos", "5 primeiros")
                Se não especificado, retorna TODOS os contatos (pode ser muitos!)
@@ -309,6 +318,7 @@ def get_contacts(limit: int | None = None) -> list:
               - remoteJid: ID do contato (ex: 5511999999999@s.whatsapp.net)
               - pushName: Nome do contato
               - isGroup: Se é grupo ou contato individual
+              - profilePicUrl: URL da foto de perfil
 
     Example:
         # Buscar todos os contatos (pode retornar centenas!)
@@ -316,41 +326,14 @@ def get_contacts(limit: int | None = None) -> list:
 
         # Buscar apenas os primeiros 10 contatos (RECOMENDADO quando há quantidade)
         contacts = get_contacts(limit=10)
-    """
-    contacts = client.fetch_contacts()
-
-    # Aplica limit se fornecido
-    if limit is not None and isinstance(contacts, list):
-        contacts = contacts[:limit]
-
-    return contacts
-
-
-@mcp.tool()
-def find_contact(
-    contact_id: str | None = None,
-    limit: int | None = None
-) -> list:
-    """Busca contatos com filtros opcionais.
-
-    Args:
-        contact_id: ID do contato no formato WhatsApp (ex: 5511999999999@s.whatsapp.net)
-        limit: Número máximo de contatos a retornar (opcional, padrão: todos)
-
-    Returns:
-        list: Lista de contatos encontrados
-
-    Example:
-        # Buscar todos os contatos
-        all_contacts = find_contact()
-
-        # Buscar apenas 5 contatos
-        contacts = find_contact(limit=5)
 
         # Buscar contato específico
-        contact = find_contact(contact_id="5511999999999@s.whatsapp.net")
+        contact = get_contacts(contact_id="5511999999999@s.whatsapp.net")
+
+        # Buscar contato específico (apenas 1 resultado)
+        contact = get_contacts(contact_id="5511999999999@s.whatsapp.net", limit=1)
     """
-    contacts = client.find_contacts(contact_id=contact_id)
+    contacts = client.fetch_contacts(contact_id=contact_id)
 
     # Aplica limit se fornecido
     if limit is not None and isinstance(contacts, list):

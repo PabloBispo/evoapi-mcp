@@ -3,6 +3,7 @@
 import sys
 import re
 import requests
+from datetime import datetime, timedelta
 from typing import Any
 from pathlib import Path
 
@@ -12,6 +13,13 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 from evoapi_mcp.config import EvolutionConfig
+
+
+# Constantes de validação
+VALID_MEDIA_TYPES = {"image", "video", "document", "audio"}
+VALID_PRESENCE_STATUS = {"available", "unavailable", "composing", "recording"}
+MAX_TEXT_LENGTH = 65536  # 64KB - limite do WhatsApp
+MAX_CAPTION_LENGTH = 1024  # Limite de legenda
 
 
 class EvolutionAPIError(Exception):
@@ -56,6 +64,8 @@ class EvolutionClient:
 
         # Cache de nomes de contatos (número -> nome)
         self._contact_names_cache: dict[str, str | None] = {}
+        self._cache_timestamp: datetime | None = None
+        self._cache_ttl = timedelta(minutes=5)  # Cache expira após 5 minutos
 
         self._log(f"Cliente inicializado para instância '{self.instance_id}'")
 
@@ -95,6 +105,83 @@ class EvolutionClient:
             )
 
         return clean_number
+
+    @staticmethod
+    def validate_url(url: str, param_name: str = "url") -> None:
+        """Valida se uma URL é válida.
+
+        Args:
+            url: URL a validar
+            param_name: Nome do parâmetro (para mensagem de erro)
+
+        Raises:
+            ValueError: Se a URL for inválida
+        """
+        if not url or not isinstance(url, str):
+            raise ValueError(f"{param_name} não pode ser vazio")
+
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(
+                f"{param_name} inválida: '{url}'. "
+                "URL deve começar com http:// ou https://"
+            )
+
+    @staticmethod
+    def validate_text_length(text: str, max_length: int, param_name: str = "text") -> None:
+        """Valida o tamanho de um texto.
+
+        Args:
+            text: Texto a validar
+            max_length: Tamanho máximo permitido
+            param_name: Nome do parâmetro (para mensagem de erro)
+
+        Raises:
+            ValueError: Se o texto exceder o tamanho máximo
+        """
+        if len(text) > max_length:
+            raise ValueError(
+                f"{param_name} muito longo: {len(text)} caracteres. "
+                f"Máximo permitido: {max_length} caracteres"
+            )
+
+    @staticmethod
+    def validate_media_type(media_type: str) -> None:
+        """Valida o tipo de mídia.
+
+        Args:
+            media_type: Tipo de mídia a validar
+
+        Raises:
+            ValueError: Se o tipo de mídia for inválido
+        """
+        if media_type not in VALID_MEDIA_TYPES:
+            raise ValueError(
+                f"media_type inválido: '{media_type}'. "
+                f"Valores válidos: {', '.join(sorted(VALID_MEDIA_TYPES))}"
+            )
+
+    def _is_cache_expired(self) -> bool:
+        """Verifica se o cache de contatos expirou.
+
+        Returns:
+            bool: True se o cache expirou ou nunca foi construído, False caso contrário
+        """
+        if not self._cache_timestamp:
+            return True
+        return datetime.now() - self._cache_timestamp > self._cache_ttl
+
+    def clear_cache(self) -> None:
+        """Limpa o cache de nomes de contatos.
+
+        Este método é útil quando você quer forçar a atualização dos nomes
+        dos contatos sem precisar reiniciar o cliente.
+
+        Example:
+            client.clear_cache()  # Cache será reconstruído na próxima chamada
+        """
+        self._contact_names_cache.clear()
+        self._cache_timestamp = None
+        self._log("Cache de contatos limpo")
 
     def _make_request(
         self,
@@ -213,10 +300,20 @@ class EvolutionClient:
     def _build_contacts_map(self) -> dict[str, str]:
         """Constrói um mapa de número -> nome a partir de todos os contatos.
 
+        Usa cache com TTL de 5 minutos. Se o cache expirou, reconstrói o mapa.
+
         Returns:
             dict: Mapeamento de número limpo para nome do contato
         """
+        # Se cache não expirou, retorna cache existente
+        if not self._is_cache_expired() and self._contact_names_cache:
+            self._log("Usando cache de contatos existente")
+            return self._contact_names_cache
+
         try:
+            # Cache expirou ou está vazio - reconstrói
+            self._log("Reconstruindo cache de contatos...")
+
             # Busca todos os contatos de uma vez (retorna lista direta)
             contact_list = self.fetch_contacts()
             contacts_map = {}
@@ -236,7 +333,11 @@ class EvolutionClient:
                 if clean_number and name:
                     contacts_map[clean_number] = name
 
-            self._log(f"Mapa de contatos construído: {len(contacts_map)} contatos")
+            # Atualiza cache e timestamp
+            self._contact_names_cache = contacts_map
+            self._cache_timestamp = datetime.now()
+
+            self._log(f"Cache de contatos atualizado: {len(contacts_map)} contatos")
             return contacts_map
 
         except Exception as e:
@@ -303,40 +404,31 @@ class EvolutionClient:
 
         return self.find_messages(chat_id=chat_id, limit=limit)
 
-    def fetch_contacts(self) -> list[dict[str, Any]]:
-        """Busca todos os contatos salvos no WhatsApp.
-
-        Endpoint: POST /chat/findContacts/{instanceId}
-
-        Returns:
-            list: Lista de contatos com nomes e números
-
-        Raises:
-            EvolutionAPIError: Se houver erro na requisição
-        """
-        self._log("Buscando contatos")
-        result = self._make_request("POST", "/chat/findContacts/{instanceId}", data={})
-
-        # A API retorna uma lista diretamente, não um objeto com "data"
-        if not isinstance(result, list):
-            self._log(f"Formato inesperado de resposta: {type(result)}", "WARNING")
-            return []
-
-        return result
-
-    def find_contacts(self, contact_id: str | None = None) -> list[dict[str, Any]]:
-        """Busca contatos com filtros opcionais.
+    def fetch_contacts(self, contact_id: str | None = None) -> list[dict[str, Any]]:
+        """Busca contatos salvos no WhatsApp com filtros opcionais.
 
         Endpoint: POST /chat/findContacts/{instanceId}
 
         Args:
-            contact_id: ID do contato específico para buscar (opcional)
+            contact_id: ID do contato específico (ex: 5511999999999@s.whatsapp.net).
+                       Se None, retorna todos os contatos.
 
         Returns:
-            list: Lista de contatos encontrados
+            list: Lista de contatos com informações completas:
+                  - remoteJid: ID do contato
+                  - pushName: Nome do contato
+                  - isGroup: Se é grupo ou contato individual
+                  - profilePicUrl: URL da foto de perfil
 
         Raises:
             EvolutionAPIError: Se houver erro na requisição
+
+        Example:
+            # Buscar todos os contatos
+            all_contacts = client.fetch_contacts()
+
+            # Buscar contato específico
+            contact = client.fetch_contacts(contact_id="5511999999999@s.whatsapp.net")
         """
         self._log(f"Buscando contatos{' (filtrado)' if contact_id else ''}")
 
@@ -350,7 +442,7 @@ class EvolutionClient:
             data=payload
         )
 
-        # A API retorna uma lista diretamente
+        # A API retorna uma lista diretamente, não um objeto com "data"
         if not isinstance(result, list):
             self._log(f"Formato inesperado de resposta: {type(result)}", "WARNING")
             return []
@@ -373,14 +465,14 @@ class EvolutionClient:
         try:
             clean_number = self.validate_phone_number(number)
 
-            # Verifica cache primeiro
-            if use_cache and clean_number in self._contact_names_cache:
+            # Verifica cache primeiro (se não expirou)
+            if use_cache and not self._is_cache_expired() and clean_number in self._contact_names_cache:
                 return self._contact_names_cache[clean_number]
 
             contact_id = f"{clean_number}@s.whatsapp.net"
 
             # Tenta buscar contato específico com filtro (retorna lista direta)
-            contact_list = self.find_contacts(contact_id=contact_id)
+            contact_list = self.fetch_contacts(contact_id=contact_id)
 
             name = None
             if contact_list and len(contact_list) > 0:
@@ -388,9 +480,11 @@ class EvolutionClient:
                 # Retorna pushName
                 name = contact.get("pushName")
 
-            # Salva no cache
+            # Salva no cache e atualiza timestamp
             if use_cache:
                 self._contact_names_cache[clean_number] = name
+                if not self._cache_timestamp:
+                    self._cache_timestamp = datetime.now()
 
             return name
 
@@ -414,7 +508,7 @@ class EvolutionClient:
 
         Args:
             number: Número de telefone no formato internacional
-            text: Texto da mensagem
+            text: Texto da mensagem (máximo 65536 caracteres)
             link_preview: Se deve mostrar preview de links
 
         Returns:
@@ -422,9 +516,13 @@ class EvolutionClient:
 
         Raises:
             InvalidPhoneNumberError: Se o número for inválido
+            ValueError: Se o texto exceder o tamanho máximo
             EvolutionAPIError: Erros da API
         """
+        # Validações
         clean_number = self.validate_phone_number(number)
+        self.validate_text_length(text, MAX_TEXT_LENGTH, "text")
+
         self._log(f"Enviando mensagem de texto para {clean_number}")
 
         payload = {
@@ -463,9 +561,16 @@ class EvolutionClient:
 
         Raises:
             InvalidPhoneNumberError: Se o número for inválido
+            ValueError: Se media_type, URL ou caption forem inválidos
             EvolutionAPIError: Erros da API
         """
+        # Validações
         clean_number = self.validate_phone_number(number)
+        self.validate_media_type(media_type)
+        self.validate_url(media_url, "media_url")
+        if caption:
+            self.validate_text_length(caption, MAX_CAPTION_LENGTH, "caption")
+
         self._log(f"Enviando {media_type} para {clean_number}")
 
         payload = {

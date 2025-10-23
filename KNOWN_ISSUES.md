@@ -10,9 +10,9 @@ Problemas conhecidos, limitações e workarounds.
 
 ### Issue #1: Duplicação de Código - fetch_contacts vs find_contacts
 
-**Status:** 🔴 Aberto
+**Status:** ✅ Resolvido (2025-10-23)
 **Prioridade:** Alta
-**Arquivo:** `src/evoapi_mcp/client.py:306-358`
+**Arquivo:** `src/evoapi_mcp/client.py:367-450`
 
 **Descrição:**
 Duas funções fazem essencialmente a mesma coisa:
@@ -62,16 +62,18 @@ def fetch_contacts(
     # ... resto da lógica
 ```
 
-**Workaround Atual:**
-Nenhum necessário, ambas funcionam.
+**Solução Aplicada:**
+Unificadas em uma única função `fetch_contacts()` com parâmetro opcional `contact_id`.
+Removida a tool `find_contact()` do server, mantendo apenas `get_contacts()` que aceita
+tanto `contact_id` quanto `limit`.
 
 ---
 
 ### Issue #2: Cache de Contatos Nunca Expira
 
-**Status:** 🔴 Aberto
+**Status:** ✅ Resolvido (2025-10-23)
 **Prioridade:** Alta
-**Arquivo:** `src/evoapi_mcp/client.py:58`
+**Arquivo:** `src/evoapi_mcp/client.py:65-67`
 
 **Descrição:**
 O cache de nomes de contatos é criado na inicialização e nunca expira:
@@ -113,16 +115,21 @@ class EvolutionClient:
         return self._contact_cache
 ```
 
-**Workaround Atual:**
-Reiniciar o Claude Desktop para limpar o cache.
+**Solução Aplicada:**
+Implementado TTL de 5 minutos no cache:
+- Adicionado `_cache_timestamp` e `_cache_ttl = timedelta(minutes=5)`
+- Criado método `_is_cache_expired()` para verificar expiração
+- Criado método público `clear_cache()` para limpeza manual
+- Atualizado `_build_contacts_map()` para verificar expiração e reconstruir quando necessário
+- Atualizado `get_contact_name()` para respeitar TTL do cache
 
 ---
 
 ### Issue #3: Sem Validação de media_type em send_media()
 
-**Status:** 🔴 Aberto
+**Status:** ✅ Resolvido (2025-10-23)
 **Prioridade:** Alta
-**Arquivo:** `src/evoapi_mcp/client.py:442`
+**Arquivo:** `src/evoapi_mcp/client.py:498-543`
 
 **Descrição:**
 A função `send_media()` aceita qualquer string como `media_type`:
@@ -172,8 +179,13 @@ def send_media(self, ..., media_type: str, ...):
     ...
 ```
 
-**Workaround Atual:**
-Verificar manualmente antes de chamar a função.
+**Solução Aplicada:**
+Implementadas validações completas em `send_media()` e `send_text()`:
+- Constantes: `VALID_MEDIA_TYPES`, `MAX_TEXT_LENGTH`, `MAX_CAPTION_LENGTH`
+- Método `validate_media_type()` que valida contra tipos permitidos
+- Método `validate_url()` que valida URLs de mídia
+- Método `validate_text_length()` que valida tamanho de textos e captions
+- Todas as validações lançam `ValueError` com mensagens descritivas antes da chamada à API
 
 ---
 
@@ -381,19 +393,26 @@ Docstrings bem detalhadas ajudam o LLM a escolher certo.
 ## 📊 Estatísticas
 
 ### Por Prioridade
-- 🔴 Crítico: 3 issues
+- 🔴 Crítico: 0 issues abertas (3 resolvidas)
 - 🟡 Médio: 3 issues
 - 🟢 Baixo: 2 issues
 
 ### Por Status
-- 🔴 Aberto: 8 issues
-- ✅ Resolvido: 0 issues
+- 🔴 Aberto: 5 issues
+- ✅ Resolvido: 3 issues (FASE 1 completa!)
 
 ---
 
 ## 🔄 Issues Resolvidas
 
-*(Nenhuma ainda)*
+### ✅ Issue #1: Duplicação de Código (Resolvido em 2025-10-23)
+Unificadas `fetch_contacts()` e `find_contacts()` em uma única função com parâmetro opcional.
+
+### ✅ Issue #2: Cache Nunca Expira (Resolvido em 2025-10-23)
+Implementado TTL de 5 minutos com métodos `_is_cache_expired()` e `clear_cache()`.
+
+### ✅ Issue #3: Sem Validação de media_type (Resolvido em 2025-10-23)
+Adicionadas validações completas para media_type, URLs e tamanhos de texto/caption.
 
 ---
 
