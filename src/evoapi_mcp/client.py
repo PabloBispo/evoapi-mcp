@@ -171,16 +171,16 @@ class EvolutionClient:
     def find_chats(self) -> dict[str, Any]:
         """Busca todas as conversas ativas.
 
-        Endpoint: GET /chat/findChats/{instanceId}
+        Endpoint: POST /chat/findChats/{instanceId}
 
         Returns:
-            dict: { "data": [{ chat object }] }
+            dict: Lista de conversas com informações detalhadas
 
         Raises:
             EvolutionAPIError: Se houver erro na requisição
         """
         self._log("Buscando conversas")
-        return self._make_request("GET", "/chat/findChats/{instanceId}")
+        return self._make_request("POST", "/chat/findChats/{instanceId}", data={})
 
     def find_messages(
         self,
