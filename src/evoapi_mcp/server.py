@@ -190,36 +190,66 @@ def get_chat_messages(
     number: str,
     limit: int = 50
 ) -> dict:
-    """Obtém mensagens de uma conversa específica por número.
+    """Obtém mensagens de uma conversa específica por número de telefone.
+
+    Use esta ferramenta quando o usuário pedir:
+    - "mostre as mensagens do número X"
+    - "últimas 20 mensagens de fulano"
+    - "conversa com 5511999999999"
 
     Args:
         number: Número no formato internacional sem '+' (ex: 5511999999999)
-        limit: Número máximo de mensagens a retornar (padrão: 50)
+        limit: Número máximo de mensagens a retornar. SEMPRE ajuste este valor
+               quando o usuário especificar quantidade (ex: "últimas 20", "50 mensagens")
+               Padrão: 50 mensagens
 
     Returns:
         dict: Lista de mensagens da conversa
 
     Example:
-        messages = get_chat_messages(
-            number="5511999999999",
-            limit=30
-        )
+        # Últimas 50 mensagens (padrão)
+        messages = get_chat_messages(number="5511999999999")
+
+        # Últimas 20 mensagens
+        messages = get_chat_messages(number="5511999999999", limit=20)
     """
     return client.get_messages_by_number(number=number, limit=limit)
 
 
 @mcp.tool()
-def list_chats() -> dict:
-    """Lista todas as conversas ativas do WhatsApp.
+def list_chats(limit: int | None = None) -> list:
+    """Lista conversas ativas do WhatsApp ordenadas por data de atualização.
+
+    Use esta ferramenta quando o usuário pedir:
+    - "liste minhas conversas"
+    - "mostre minhas conversas mais recentes"
+    - "quais são meus últimos chats"
+
+    Args:
+        limit: Número máximo de conversas a retornar. SEMPRE use este parâmetro
+               quando o usuário especificar uma quantidade (ex: "5 conversas", "10 chats")
 
     Returns:
-        dict: { "data": [lista de chats] } com informações das conversas
+        list: Lista de conversas, cada uma com:
+              - remoteJid: ID do chat
+              - pushName: Nome do contato (ou null)
+              - lastMessage: Última mensagem trocada
+              - unreadCount: Número de mensagens não lidas
 
     Example:
+        # Listar todas as conversas
         chats = list_chats()
-        print(f"Total de conversas: {len(chats['data'])}")
+
+        # Listar apenas as 10 mais recentes (IMPORTANTE: sempre passar limit quando especificado)
+        chats = list_chats(limit=10)
     """
-    return client.find_chats()
+    chats = client.find_chats()
+
+    # Aplica limit se fornecido
+    if limit is not None and isinstance(chats, list):
+        chats = chats[:limit]
+
+    return chats
 
 
 @mcp.tool()
@@ -228,19 +258,31 @@ def find_messages(
     chat_id: str | None = None,
     limit: int = 50
 ) -> dict:
-    """Busca mensagens com filtros avançados.
+    """Busca mensagens com filtros avançados em todas as conversas.
+
+    Use esta ferramenta quando o usuário pedir:
+    - "busque mensagens com a palavra X"
+    - "encontre mensagens sobre pedido"
+    - "mensagens que contenham reunião"
 
     Args:
-        query: Termo de busca nas mensagens (opcional)
+        query: Termo de busca nas mensagens. Use quando o usuário pedir para
+               buscar/encontrar mensagens com palavras específicas
         chat_id: ID do chat específico no formato WhatsApp (ex: 5511999999999@s.whatsapp.net)
-        limit: Número máximo de mensagens a retornar (padrão: 50)
+                 Raramente usado - prefira usar number com get_chat_messages()
+        limit: Número máximo de mensagens a retornar. SEMPRE ajuste quando
+               o usuário especificar quantidade
+               Padrão: 50 mensagens
 
     Returns:
         dict: Lista de mensagens encontradas
 
     Example:
-        # Buscar por termo
+        # Buscar por termo em todas as conversas
         messages = find_messages(query="pedido")
+
+        # Buscar apenas 10 mensagens com "reunião"
+        messages = find_messages(query="reunião", limit=10)
 
         # Buscar em chat específico
         messages = find_messages(chat_id="5511999999999@s.whatsapp.net", limit=20)
@@ -249,38 +291,72 @@ def find_messages(
 
 
 @mcp.tool()
-def get_contacts() -> dict:
-    """Busca todos os contatos salvos no WhatsApp.
+def get_contacts(limit: int | None = None) -> dict:
+    """Busca contatos salvos no WhatsApp.
+
+    Use esta ferramenta quando o usuário pedir:
+    - "liste meus contatos"
+    - "mostre 10 contatos"
+    - "quais são meus contatos salvos"
+
+    Args:
+        limit: Número máximo de contatos a retornar. SEMPRE use este parâmetro
+               quando o usuário especificar uma quantidade (ex: "10 contatos", "5 primeiros")
+               Se não especificado, retorna TODOS os contatos (pode ser muitos!)
 
     Returns:
-        dict: { "data": [lista de contatos com nomes e números] }
+        dict: { "data": [lista de contatos] } onde cada contato tem:
+              - id: ID do contato (ex: 5511999999999@s.whatsapp.net)
+              - pushName: Nome do contato
+              - name: Nome alternativo
 
     Example:
+        # Buscar todos os contatos (pode retornar centenas!)
         contacts = get_contacts()
-        for contact in contacts['data']:
-            print(f"{contact['pushName']}: {contact['id']}")
+
+        # Buscar apenas os primeiros 10 contatos (RECOMENDADO quando há quantidade)
+        contacts = get_contacts(limit=10)
     """
-    return client.fetch_contacts()
+    result = client.fetch_contacts()
+
+    # Aplica limit se fornecido e se result tem 'data'
+    if limit is not None and isinstance(result, dict) and "data" in result:
+        result["data"] = result["data"][:limit]
+
+    return result
 
 
 @mcp.tool()
-def find_contact(contact_id: str | None = None) -> dict:
+def find_contact(
+    contact_id: str | None = None,
+    limit: int | None = None
+) -> dict:
     """Busca contatos com filtros opcionais.
 
     Args:
         contact_id: ID do contato no formato WhatsApp (ex: 5511999999999@s.whatsapp.net)
+        limit: Número máximo de contatos a retornar (opcional, padrão: todos)
 
     Returns:
         dict: Lista de contatos encontrados
 
     Example:
-        # Buscar todos
+        # Buscar todos os contatos
         all_contacts = find_contact()
+
+        # Buscar apenas 5 contatos
+        contacts = find_contact(limit=5)
 
         # Buscar contato específico
         contact = find_contact(contact_id="5511999999999@s.whatsapp.net")
     """
-    return client.find_contacts(contact_id=contact_id)
+    result = client.find_contacts(contact_id=contact_id)
+
+    # Aplica limit se fornecido e se result tem 'data'
+    if limit is not None and isinstance(result, dict) and "data" in result:
+        result["data"] = result["data"][:limit]
+
+    return result
 
 
 @mcp.tool()
