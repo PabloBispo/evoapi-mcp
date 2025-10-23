@@ -191,6 +191,10 @@ class EvolutionClient:
         # Enriquece com nomes de contatos se solicitado
         if enrich_with_names and isinstance(chats, list):
             self._log("Enriquecendo conversas com nomes de contatos")
+
+            # OTIMIZAÇÃO: Busca TODOS os contatos de uma vez ao invés de um por um
+            contacts_map = self._build_contacts_map()
+
             for chat in chats:
                 if chat.get("pushName") is None and chat.get("remoteJid"):
                     # Extrai o número do remoteJid
@@ -198,12 +202,43 @@ class EvolutionClient:
                     # Ignora grupos (terminam com @g.us)
                     if not remote_jid.endswith("@g.us"):
                         number = remote_jid.replace("@s.whatsapp.net", "")
-                        name = self.get_contact_name(number)
-                        if name:
-                            chat["pushName"] = name
-                            chat["_enriched"] = True  # Flag para indicar que foi enriquecido
+                        # Lookup local (muito mais rápido que HTTP)
+                        clean_number = re.sub(r'\D', '', number)
+                        if clean_number in contacts_map:
+                            chat["pushName"] = contacts_map[clean_number]
+                            chat["_enriched"] = True
 
         return chats
+
+    def _build_contacts_map(self) -> dict[str, str]:
+        """Constrói um mapa de número -> nome a partir de todos os contatos.
+
+        Returns:
+            dict: Mapeamento de número limpo para nome do contato
+        """
+        try:
+            # Busca todos os contatos de uma vez
+            result = self.fetch_contacts()
+            contacts_map = {}
+
+            contact_list = result.get("data", [])
+            for contact in contact_list:
+                # Extrai número do ID
+                contact_id = contact.get("id", "")
+                number = contact_id.replace("@s.whatsapp.net", "")
+                clean_number = re.sub(r'\D', '', number)
+
+                # Pega o nome (pushName ou name)
+                name = contact.get("pushName") or contact.get("name")
+                if clean_number and name:
+                    contacts_map[clean_number] = name
+
+            self._log(f"Mapa de contatos construído: {len(contacts_map)} contatos")
+            return contacts_map
+
+        except Exception as e:
+            self._log(f"Erro ao construir mapa de contatos: {e}", "WARNING")
+            return {}
 
     def find_messages(
         self,
