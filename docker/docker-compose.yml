@@ -1,0 +1,242 @@
+version: '3.8'
+
+# ==============================================================================
+# Evolution API MCP Server - Docker Compose Stack
+# ==============================================================================
+#
+# Stack completa contendo:
+# - PostgreSQL (banco de dados)
+# - Redis (cache/queue)
+# - Evolution API (WhatsApp gateway)
+# - EvoAPI MCP HTTP (nosso servidor HTTP)
+#
+# Quick Start:
+#   1. cp .env.docker.example .env.docker
+#   2. Editar .env.docker com suas credenciais
+#   3. docker-compose up -d
+#
+# ==============================================================================
+
+services:
+  # ============================================================================
+  # PostgreSQL - Database
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: evolution-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-evolution}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD não definido}
+      POSTGRES_DB: ${POSTGRES_DB:-evolution}
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - evoapi-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # Redis - Cache & Queue
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: evolution-redis
+    restart: unless-stopped
+
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - evoapi-network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # Evolution API - WhatsApp Gateway
+  # ============================================================================
+  evolution-api:
+    image: atendai/evolution-api:latest
+    container_name: evolution-api
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    environment:
+      # Server
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+
+      # Cors
+      CORS_ORIGIN: '*'
+      CORS_METHODS: 'GET,POST,PUT,DELETE'
+      CORS_CREDENTIALS: 'true'
+
+      # Database (PostgreSQL)
+      DATABASE_ENABLED: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-evolution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evolution}?schema=public
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+
+      # Redis
+      REDIS_ENABLED: 'true'
+      REDIS_URI: redis://default:${REDIS_PASSWORD:-redis_password}@redis:6379
+      REDIS_PREFIX_KEY: 'evolution'
+
+      # Authentication
+      AUTHENTICATION_TYPE: ${AUTHENTICATION_TYPE:-apikey}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?EVOLUTION_API_KEY não definido}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'false'
+
+      # Instance
+      CONFIG_SESSION_PHONE_CLIENT: 'Evolution API'
+      CONFIG_SESSION_PHONE_NAME: 'Chrome'
+
+      # QR Code
+      QRCODE_LIMIT: 30
+      QRCODE_COLOR: '#198754'
+
+      # Webhook (opcional)
+      WEBHOOK_GLOBAL_ENABLED: 'false'
+      WEBHOOK_GLOBAL_URL: ''
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: 'false'
+
+      # Logs
+      LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS
+      LOG_COLOR: 'true'
+      LOG_BAILEYS: 'error'
+
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_temp:/evolution/temp
+
+    networks:
+      - evoapi-network
+
+    ports:
+      - "${EVOLUTION_API_PORT:-8080}:8080"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ============================================================================
+  # EvoAPI MCP HTTP - Nosso Servidor HTTP
+  # ============================================================================
+  evoapi-mcp-http:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+    container_name: evoapi-mcp-http
+    restart: unless-stopped
+
+    depends_on:
+      evolution-api:
+        condition: service_healthy
+
+    environment:
+      # Evolution API connection (usa DNS interno do Docker)
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_TOKEN: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE_NAME: ${EVOLUTION_INSTANCE_NAME:-default_instance}
+
+      # Server config
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 3000
+      UVICORN_LOG_LEVEL: info
+
+    networks:
+      - evoapi-network
+
+    ports:
+      - "${MCP_HTTP_PORT:-3000}:3000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  evoapi-network:
+    driver: bridge
+    name: evoapi-network
+
+# ==============================================================================
+# Volumes (Persistência de Dados)
+# ==============================================================================
+volumes:
+  # PostgreSQL data
+  postgres_data:
+    driver: local
+    name: evolution_postgres_data
+
+  # Redis data
+  redis_data:
+    driver: local
+    name: evolution_redis_data
+
+  # Evolution API instances (QR codes, sessões WhatsApp)
+  evolution_instances:
+    driver: local
+    name: evolution_instances
+
+  # Evolution API temp files (uploads/downloads)
+  evolution_temp:
+    driver: local
+    name: evolution_temp
