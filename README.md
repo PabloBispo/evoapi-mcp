@@ -46,9 +46,10 @@ Este servidor permite que o Claude Desktop interaja com o WhatsApp através da [
 
 ## 📋 Pré-requisitos
 
-1. **Python 3.10+**
-2. **Claude Desktop** instalado
-3. **Instância Evolution API** rodando
+1. **Python 3.10+** (para uso local)
+2. **Claude Desktop** instalado (para modo MCP stdio)
+3. **Docker & Docker Compose** (para deploy completo)
+4. **Instância Evolution API** rodando (ou use nosso Docker Compose)
    - Você precisa de:
      - URL base da API (ex: `https://api.example.com`)
      - API Token (apikey)
@@ -56,7 +57,29 @@ Este servidor permite que o Claude Desktop interaja com o WhatsApp através da [
 
 ---
 
-## 🔧 Instalação
+## 🐳 Quick Start com Docker (Recomendado!)
+
+**Deploy completo Evolution API + MCP HTTP Server em 3 comandos:**
+
+```bash
+cd docker/
+cp .env.docker.example .env.docker
+# Edite .env.docker com suas credenciais
+docker-compose up -d
+```
+
+**Resultado:**
+- ✅ PostgreSQL rodando
+- ✅ Redis rodando
+- ✅ Evolution API em http://localhost:8080
+- ✅ MCP HTTP Server em http://localhost:3000
+- ✅ Swagger UI em http://localhost:3000/docs
+
+**Documentação completa:** [docker/README.md](docker/README.md)
+
+---
+
+## 🔧 Instalação Local (Modo MCP Stdio)
 
 ### 1. Clone o Repositório
 
@@ -235,6 +258,27 @@ Mostre informações da instância
 | `get_connection_status` | Verifica status da conexão | - |
 | `get_instance_info` | Informações da instância | - |
 | `set_presence` | Define status de presença | `status`, `number` |
+
+---
+
+## 🌐 Modos de Uso
+
+Este projeto suporta **dois modos de operação**:
+
+### 1. Modo Stdio (Claude Desktop)
+- Comunicação via stdio (stdin/stdout)
+- Integração nativa com Claude Desktop
+- Melhor para uso pessoal local
+- Configuração em `claude_desktop_config.json`
+
+### 2. Modo HTTP (Docker/Servidor)
+- API REST com Swagger UI
+- Deploy em containers Docker
+- Acesso remoto via HTTP
+- Ideal para produção e equipes
+- Swagger docs em `/docs`
+
+**Você pode usar ambos simultaneamente!** 🎉
 
 ---
 

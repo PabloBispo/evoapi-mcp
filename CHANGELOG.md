@@ -7,6 +7,106 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [1.1.0] - 2025-10-24
+
+### 🐳 Docker & HTTP Support
+
+Esta release adiciona suporte completo a Docker e modo HTTP, permitindo deploy em produção e acesso via API REST.
+
+### ✨ Adicionado
+
+#### HTTP Server (FastAPI)
+- **Servidor HTTP REST** completo expondo todas as 14 ferramentas MCP
+- **Swagger UI interativo** em `/docs` para testar endpoints
+- **ReDoc** em `/redoc` com documentação alternativa
+- **CORS configurado** para permitir chamadas de frontends
+- **Pydantic models** para validação de requests
+- **Healthcheck endpoint** em `/health` para monitoramento
+- **14 endpoints REST:**
+  - `POST /messages/text` - Enviar mensagem de texto
+  - `POST /messages/media` - Enviar mídia
+  - `GET /chats` - Listar conversas
+  - `GET /contacts` - Listar contatos
+  - `GET /messages/{number}` - Buscar mensagens
+  - `GET /instance/status` - Status da instância
+  - `POST /presence` - Definir presença
+  - `POST /messages/mark-read` - Marcar como lido
+  - `POST /chats/archive` - Arquivar conversa
+  - `DELETE /chats/{number}` - Deletar conversa
+  - `GET /profile/picture/{number}` - Foto de perfil
+  - `GET /profile/status/{number}` - Status/bio
+  - `POST /check-number` - Verificar número no WhatsApp
+  - `GET /profile/business/{number}` - Perfil comercial
+  - `POST /cache/clear` - Limpar cache manualmente
+
+#### Docker Compose Stack
+- **Stack completa** com 4 serviços orquestrados:
+  - PostgreSQL 15 (database para Evolution API)
+  - Redis 7 (cache e queue)
+  - Evolution API (WhatsApp gateway)
+  - MCP HTTP Server (nosso servidor REST)
+- **Dockerfile multi-stage** para imagem otimizada
+- **Healthchecks** em todos os serviços
+- **Volumes persistentes** para dados críticos
+- **Network isolada** para comunicação entre containers
+- **Variáveis de ambiente** via `.env.docker`
+- **Usuário não-root** no container (segurança)
+
+#### Documentação Docker
+- **docker/README.md** (500+ linhas) com:
+  - Quick start (3 comandos)
+  - Guia de QR code para conectar WhatsApp
+  - Exemplos de uso da API
+  - Troubleshooting completo
+  - Procedimentos de backup/restore
+  - Comandos úteis (logs, restart, cleanup)
+  - Práticas de segurança
+- **docker/.env.docker.example** com template de configuração
+- **README.md principal atualizado** com seção Docker
+
+### 🔧 Modificado
+
+#### Dependencies
+- Adicionado `fastapi>=0.104.0` para servidor HTTP
+- Adicionado `uvicorn[standard]>=0.24.0` para ASGI server
+
+#### README.md
+- Nova seção "Quick Start com Docker"
+- Seção "Modos de Uso" explicando stdio vs HTTP
+- Pré-requisitos atualizados incluindo Docker
+
+### 📊 Estatísticas
+
+- **1 novo servidor HTTP** com 14 endpoints REST
+- **500+ linhas** de documentação Docker
+- **398 linhas** de código HTTP server
+- **Stack completa** production-ready
+- **Dual-mode** support (stdio + HTTP)
+
+### 🎯 Use Cases
+
+**Modo Stdio (Local):**
+- Uso pessoal com Claude Desktop
+- Desenvolvimento e testes
+- Sem necessidade de servidor
+
+**Modo HTTP (Docker):**
+- Deploy em produção
+- Acesso remoto/equipes
+- Integração com outros sistemas
+- Auto-healing com healthchecks
+- Escalabilidade horizontal
+
+### 🔒 Segurança
+
+- Container roda com usuário não-root
+- Multi-stage build (menor superfície de ataque)
+- Variáveis sensíveis via environment
+- `.env.docker` no gitignore
+- HTTPS recomendado para produção (via reverse proxy)
+
+---
+
 ## [1.0.0] - 2025-10-24
 
 ### 🎉 Primeira Release Estável!
